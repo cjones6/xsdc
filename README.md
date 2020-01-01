@@ -1,9 +1,9 @@
 XSDC
 ====================================
 
-This repository contains companion code for the following paper:
+This repository contains companion code for the following [paper](https://arxiv.org/pdf/1912.12979.pdf):
 
-C. Jones, V. Roulet and Z. Harchaoui. End-to-end Learning, with or without Labels. arXiv preprint, 2019.
+C. Jones, V. Roulet and Z. Harchaoui. End-to-end Learning, with or without Labels. arXiv preprint arXiv:1912.12979, 2019.
 
 If you use this code please cite the paper using the bibtex reference below.
 
@@ -11,7 +11,7 @@ If you use this code please cite the paper using the bibtex reference below.
 @article{JRH2019,
   title={End-to-end Learning, with or without Labels},
   author={Jones, Corinne and Roulet, Vincent and Harchaoui, Zaid},
-  journal={arXiv preprint},
+  journal={arXiv preprint arXiv:1912.12979},
   year={2019}
 }
 ```
