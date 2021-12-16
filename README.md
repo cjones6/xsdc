@@ -23,11 +23,11 @@ In the paper *Discriminative Clustering with Representation Learning for any Rat
 The proposed objective function for the cases where we have no labels, some labels, or all of the labels is summarized in the figure below.
 
 ![](figures/supervisions_figure.jpg)
-Example equivalence matrix $M = YY^T$ and problem for varying levels of supervision.
+Figure: Example equivalence matrix M=YY<sup>T</sup> and problem for varying levels of supervision.
 
-Here $M = YY^T$ is the equivalence matrix, where $Y$ is the one-hot label matrix. The matrix $A$ is a function of the output of a network, $\Phi$, where the network is parameterized by $V$. The set $\mathcal{C}'$ contains the constraints on the labels, while the set $\mathcal{K}$ contains the indices $(i,j)$ for which the entries $M_{ij}$ are known.
+Here M=YY<sup>T</sup> is the equivalence matrix, where Y is the one-hot label matrix. The matrix A is a function of the output of a network, Φ, where the network is parameterized by V. The set C' contains the constraints on the labels, while the set K contains the indices (i,j) for which the entries M<sub>i,j</sub> are known. 
 
-The XSDC algorithm, which optimizes the objective function, alternates between obtaining an approximate solution to $M$ of the assignment problem on a mini-batch and taking gradient steps to update $V$. The assignment problem is solved using a matrix balancing algorithm we develop in the paper.
+The XSDC algorithm, which optimizes the objective function, alternates between obtaining an approximate solution M<sup>(t)</sup> to the assignment problem on a mini-batch and taking a gradient step to update V. The assignment problem is solved using a matrix balancing algorithm we develop in the paper.
 
 
 Installation
