@@ -95,10 +95,10 @@ class Params:
     :param project: Whether to project the filters onto the unit sphere
     :param train_w_layers: List of layers to train. If None, it trains the parameters of all of the layers.
     :param lambda_filters: Value of the l2 penalty on the filters
-    :param lambda_pix: Value of the l2 penalty on the centered features
     :param lam: Value of the l2 penalty on the parameters of the classifier
     :param standardize: Whether to standardize the features that are output from the network
     :param normalize: Whether to normalize the features that are output from the network
+    :param augment: Number of augmented copies of each input example to use. If 0 then no augmentation is performed.
     :param add_constraints: Whether additional constraints related to the unlabeled training data should be added
     :param add_constraints_method: How to add the additional constraints. One of 'random' (random correct constraints
                                    that don't give away the true label) or 'specific' (constraints derived from
@@ -112,6 +112,7 @@ class Params:
     :param w_last_init: Initial values of the coefficients of the output layer
     :param b_last_init: Initial values of the biases of the output layer
     :param labeling_method: Labeling method. One of 'matrix balancing', 'pseudo-labeling', or 'deep clustering'.
+    :param rounding: Rounding method to perform after matrix balancing. If None, no rounding is performed.
     :param deepcluster_k: Number of clusters to use when performing the clustering step of deep clustering
     :param deepcluster_update_clusters_every: Number of iterations between cluster updates in deep clustering
     :param labeling_burnin: Number of iterations for which learning on only the labeled data should be performed prior
@@ -127,49 +128,52 @@ class Params:
     :param save_path: Location where the parameters should be saved. If None, they aren't saved
     """
     def __init__(self, nclasses=10, min_frac_points_class=None, max_frac_points_class=None, ckn=True, convnet=False,
-                 project=False, train_w_layers=None, lambda_filters=0, lambda_pix=0, lam=None, standardize=False,
-                 normalize=False, add_constraints=False, add_constraints_method='random', add_constraints_frac=None,
+                 project=False, train_w_layers=None, lambda_filters=0, lam=None, standardize=False, normalize=False,
+                 augment=0, add_constraints=False, add_constraints_method='random', add_constraints_frac=None,
                  add_constraints_classes=0, nn=1, balanced=True, only_sup=False, w_last_init=None, b_last_init=None,
-                 labeling_method='matrix balancing', deepcluster_k=None, deepcluster_update_clusters_every=None,
-                 labeling_burnin=0, step_size_init_sup=None, step_size_init_semisup=None, update_lambda=True,
-                 momentum=0, maxiter_wlast=1000, maxiter=1000, eval_test_every=10, save_every=100, save_path=None):
+                 labeling_method='matrix balancing', rounding=None, deepcluster_k=None,
+                 deepcluster_update_clusters_every=None, labeling_burnin=0, step_size_init_sup=None,
+                 step_size_init_semisup=None, update_lambda=True, momentum=0, maxiter_wlast=1000, maxiter=1000,
+                 eval_test_every=10, save_every=100, save_path=None):
 
         self.nclasses = nclasses
-        self.standardize = standardize
-        self.normalize = normalize
-        self.w_last_init = w_last_init
-        self.b_last_init = b_last_init
-        self.step_size_init_sup = step_size_init_sup
-        self.step_size_init_semisup = step_size_init_semisup
-        self.maxiter_wlast_full = maxiter_wlast
-        self.maxiter_final = maxiter
-        self.lam = lam
-        self.save_path = save_path
-        self.eval_test_every = eval_test_every
-        self.save_every = save_every
-        self.labeling_method = labeling_method
-        self.deepcluster_k = deepcluster_k if deepcluster_k is not None else self.nclasses
-        self.deepcluster_update_clusters_every = deepcluster_update_clusters_every
-        self.train_w_layers = train_w_layers
-        self.lambda_pix = lambda_pix
-        self.lambda_filters = lambda_filters
-        self.labeling_burnin = labeling_burnin
-        self.project = project
-        self.ckn = ckn
-        self.convnet = convnet
-        self.nn = nn
-        self.update_lambda = update_lambda
-        self.momentum = momentum
-        self.balanced = balanced
         self.min_frac_points_class = min_frac_points_class
         self.max_frac_points_class = max_frac_points_class
-        self.only_sup = only_sup
+        self.ckn = ckn
+        self.convnet = convnet
+        self.project = project
+        self.train_w_layers = train_w_layers
+        self.lambda_filters = lambda_filters
+        self.lam = lam
+        self.standardize = standardize
+        self.normalize = normalize
+        self.augment = augment
         self.add_constraints = add_constraints
         self.add_constraints_method = add_constraints_method
-        self.add_constraints_classes = add_constraints_classes
         self.add_constraints_frac = add_constraints_frac
+        self.add_constraints_classes = add_constraints_classes
+        self.nn = nn
+        self.balanced = balanced
+        self.only_sup = only_sup
+        self.w_last_init = w_last_init
+        self.b_last_init = b_last_init
+        self.labeling_method = labeling_method
+        self.rounding = rounding
+        self.deepcluster_k = deepcluster_k if deepcluster_k is not None else self.nclasses
+        self.deepcluster_update_clusters_every = deepcluster_update_clusters_every
+        self.labeling_burnin = labeling_burnin
+        self.step_size_init_sup = step_size_init_sup
+        self.step_size_init_semisup = step_size_init_semisup
+        self.update_lambda = update_lambda
+        self.momentum = momentum
+        self.maxiter_wlast_full = maxiter_wlast
+        self.maxiter_final = maxiter
+        self.eval_test_every = eval_test_every
+        self.save_every = save_every
+        self.save_path = save_path
 
-        assert self.labeling_method in ['matrix balancing', 'pseudo labeling', 'deep clustering'], \
+        assert self.labeling_method in ['matrix balancing', 'pseudo labeling', 'deep clustering',
+                                        'eigendecomposition'], \
             self.labeling_method + " is not a valid labeling method. It should be one of 'matrix balancing', 'pseudo " \
                                    "labeling', 'deep clustering'"
 
@@ -218,6 +222,7 @@ class Results:
         self.test_loss = {}
         self.epoch_time = {}
         self.step_size = {}
+        self.eigenvalues = {}
         self.save_path = save_path
 
         if self.save_path is not None:

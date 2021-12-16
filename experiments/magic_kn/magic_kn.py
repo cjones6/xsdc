@@ -41,8 +41,6 @@ parser.add_argument('--labeling_method', default='matrix balancing', type=str,
                          "'pseudo labeling', or 'deep clustering'.")
 parser.add_argument('--lam', default=None, type=int,
                     help='log2(l2 penalty on classifier parameters)')
-parser.add_argument('--lambda_pix', default=-4, type=int,
-                    help="log2(L2 penalty on ||PiX||^2)")
 parser.add_argument('--lambda_filters', default=-4, type=int,
                     help="log2(L2 penalty on the norm of the filters)")
 parser.add_argument('--lr_semisup', default=-4, type=int,
@@ -51,10 +49,10 @@ parser.add_argument('--lr_sup_init', default=-4, type=int,
                     help='log2(Learning rate for the supervised initialization)')
 parser.add_argument('--num_clusters', default=2, type=int,
                     help='Number of clusters to use in deep clustering')
-parser.add_argument('--num_iters', default=500, type=int,
-                    help='Number of total iterations to perform')
 parser.add_argument('--num_filters', default=32, type=int,
                     help='Number of filters per layer in the model')
+parser.add_argument('--num_iters', default=500, type=int,
+                    help='Number of total iterations to perform')
 parser.add_argument('--num_labeled', default=50, type=int,
                     help='Fraction of data that is labeled')
 parser.add_argument('--save_every', default=50, type=int,
@@ -82,15 +80,14 @@ torch.cuda.manual_seed(args.seed)
 
 args.lr_sup_init = 2**args.lr_sup_init
 args.lr_semisup = 2**args.lr_semisup
-args.lambda_pix = 2**args.lambda_pix
 args.lambda_filters = 2**args.lambda_filters
 args.lam = 2**args.lam if args.lam is not None else None
 stratified_unlabeling = True if args.num_labeled > 0 else False
 print(args)
 
 balanced_version = True
-min_frac_points_class = 0.5
-max_frac_points_class = 0.5
+min_frac_points_class = 1/args.num_clusters
+max_frac_points_class = 1/args.num_clusters
 
 nclasses = 2
 ckn = True
@@ -105,11 +102,11 @@ train_loader, _, train_labeled_loader, train_unlabeled_loader, valid_loader, tra
 bw = np.median(sklearn.metrics.pairwise.pairwise_distances(train_loader.dataset.dataset.images[0:1000]).reshape(-1))
 
 save_dir = args.save_path
-save_file = save_dir + str(args.num_labeled) + '_' + str(-1) + '_' + str(args.num_filters) + '_' + str(bw) \
-            + '_' + str(args.lr_sup_init) + '_' + str(args.lr_semisup) + '_' + \
-            '-'.join(str(args.labeling_method).split(' ')) + '_' + str(args.lam) + '_' + str(args.lambda_pix) + '_0_' +\
-            str(args.lambda_filters) + '_' + str(max_frac_points_class) + '_' + str(args.num_clusters) + '_' + \
-            str(args.update_clusters_every) + '_' + str(args.seed) + '_' + str(time.time())
+save_file = save_dir + str(args.num_labeled) + '_' + str(-1) + '_' + str(args.num_filters) + '_' + str(bw) + \
+            '_' + str(args.lr_sup_init) + '_' + str(args.lr_semisup) + '_' + \
+            '-'.join(str(args.labeling_method).split(' ')) + '_' + str(args.lam) + '_0_' + str(args.lambda_filters) + \
+            '_' + str(max_frac_points_class) + '_' + str(args.num_clusters) + '_' + str(args.update_clusters_every) + \
+            '_' + str(args.seed) + '_' + str(time.time())
 
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
@@ -134,8 +131,8 @@ else:
     data = opt_structures.Data(None, train_unlabeled_loader, None, None, test_loader, deepcluster_loader=train_loader)
 params = opt_structures.Params(nclasses=nclasses, min_frac_points_class=min_frac_points_class,
                                max_frac_points_class=max_frac_points_class, ckn=ckn, project=False,
-                               lambda_filters=args.lambda_filters, lambda_pix=args.lambda_pix, lam=args.lam,
-                               normalize=True, balanced=balanced_version, labeling_method=args.labeling_method,
+                               lambda_filters=args.lambda_filters, lam=args.lam, normalize=True,
+                               balanced=balanced_version, labeling_method=args.labeling_method,
                                deepcluster_k=args.num_clusters,
                                deepcluster_update_clusters_every=args.update_clusters_every,
                                labeling_burnin=args.labeling_burnin, step_size_init_sup=args.lr_sup_init,

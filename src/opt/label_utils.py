@@ -6,9 +6,71 @@ from sklearn.metrics import confusion_matrix
 import torch
 
 from src import default_params as defaults
+from . import opt_utils
 
 
-def optimize_labels(X, k, lam, mask, known_values, nmin=None, nmax=None, use_cpu=False):
+def diffrac_relaxation_estimate_M(X, k, lam, mask, known_values, nmin=None, use_cpu=False, rounding=None):
+    """
+    Estimate the matrix M using a relaxation from Section 2.6 of the following paper:
+
+    - Bach FR, Harchaoui Z (2007) DIFFRAC: a discriminative and flexible framework for clustering. In: Advances in
+      Neural Information Processing Systems, pp 49–56
+    :param X: 2D array of features
+    :param k: Number of classes
+    :param lam: Penalty on the l2 norm of the weights in the loss function
+    :param mask: Binary matrix with value 0 in entry (i,j) if it is known whether i and j belong to the same class and 1
+                 else
+    :param known_values: Binary matrix with value 1 in entry (i,j) if it is known that i and j belong to the same class
+                         and 0 else
+    :param nmin: Minimum number of points in a class
+    :param use_cpu: Whether to perform the computations on the CPU
+    :param rounding: Rounding method to use. Either 'k-means' or None.
+    :return: Tuple containing:
+
+        * M: Estimated equivalence matrix YY^T
+        * eigenvalues: The eigenvalues of A
+    """
+    n, d = X.shape
+
+    if nmin is None:
+        nmin = n/k
+    if use_cpu:
+        orig_device = defaults.device
+        defaults.device = torch.device('cpu')
+        X = X.cpu()
+
+    PiX = centering(X)
+    inv_term = X.t().mm(PiX) + n*lam*torch.eye(d, device=defaults.device)
+    A = 1/n*(centering(torch.eye(n, device=defaults.device)) - PiX.mm(torch.solve(PiX.t(), inv_term)[0]))
+
+    lam, U = torch.symeig(A, eigenvectors=True)
+    eigenvalues = lam.clone()
+    eigengap = (lam[k] - lam[k - 1]).item()
+    lam[k:] = 0
+    lam[1:k] = nmin
+    lam[0] = n - (k-1)*nmin
+
+    if use_cpu:
+        defaults.device = orig_device
+
+    M = U.mm(torch.diag(lam)).mm(U.t())
+    M[~mask] = known_values[~mask]
+
+    if rounding is not None:
+        if rounding == 'k-means':
+            Y = U.mm(torch.diag(torch.sqrt(lam)))
+            Y = Y[:, :k]
+            Y = Y/torch.norm(Y, 2, 0)
+            y = kmeans(np.ascontiguousarray(Y.contiguous().double().cpu().numpy()).astype('float32'), k)
+            Y = opt_utils.one_hot_embedding(torch.from_numpy(y), k)
+            M = Y.mm(Y.t())
+        else:
+            raise NotImplementedError
+
+    return M, eigenvalues
+
+
+def optimize_labels(X, k, lam, mask, known_values, nmin=None, nmax=None, use_cpu=False, eigenvalues=True):
     """
     Given a matrix X of features and the number of classes, optimize over the labels of the unknown observations.
 
@@ -22,7 +84,11 @@ def optimize_labels(X, k, lam, mask, known_values, nmin=None, nmax=None, use_cpu
     :param nmin: Minimum number of points in a class
     :param nmax: Maximum number of points in a class
     :param use_cpu: Whether to perform the computations on the CPU
-    :return: M: Estimated equivalence matrix YY^T
+    :param eigenvalues: Whether to compute the eigenvalues of the matrix A
+    :return: Tuple containing:
+
+        * M: Estimated equivalence matrix YY^T
+        * eigenvalues: The eigenvalues of A if requested, else None
     """
     n, d = X.shape
     if nmin is None or nmax is None:
@@ -34,14 +100,21 @@ def optimize_labels(X, k, lam, mask, known_values, nmin=None, nmax=None, use_cpu
 
     PiX = centering(X)
     inv_term = X.t().mm(PiX) + n*lam*torch.eye(d, device=defaults.device)
-    M = 1/n*(centering(torch.eye(n, device=defaults.device)) - PiX.mm(torch.solve(PiX.t(), inv_term)[0]))
+    A = 1/n*(centering(torch.eye(n, device=defaults.device)) - PiX.mm(torch.solve(PiX.t(), inv_term)[0]))
+
+    if eigenvalues:
+        with torch.autograd.no_grad():
+            eigenvalues, U = torch.symeig(A.cpu(), eigenvectors=False)
+            eigenvalues = eigenvalues.cpu()
+    else:
+        eigenvalues = None
 
     M0 = torch.ones(n, n, device=defaults.device)/k
     done = 0
     mu_factor = 1
     while not done:
         try:
-            M = matrix_balancing(M, mask, known_values, nmin, nmax, M0, mu_factor=mu_factor)
+            M = matrix_balancing(A, mask, known_values, nmin, nmax, M0, mu_factor=mu_factor)
             done = 1
         except:
             mu_factor *= 2
@@ -51,7 +124,7 @@ def optimize_labels(X, k, lam, mask, known_values, nmin=None, nmax=None, use_cpu
     if use_cpu:
         defaults.device = orig_device
 
-    return M
+    return M, eigenvalues
 
 
 def centering(X):
@@ -74,13 +147,11 @@ def matrix_balancing(Q, mask, known_values, nmin, nmax, Y0, mu_factor=1, num_ite
                  else
     :param known_values: Binary matrix with value 1 in entry (i,j) if it is known that i and j belong to the same class
                          and 0 else
-    :param nmax: Maximum number of points in a class
     :param nmin: Minimum number of points in a class
+    :param nmax: Maximum number of points in a class
     :param Y0: Initial guess for the solution
     :param mu_factor: Factor by which the median absolute entry in Q should be multiplied to obtain the value of the
                       entropic regularization parameter
-    :param nmin: Minimum number of points in a class
-    :param nmax: Maximum number of points in a class
     :param num_iter: Number of iterations to perform
     :return: M: Estimated equivalence matrix YY^T
     """

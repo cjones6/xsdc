@@ -7,7 +7,7 @@ from . import create_data_loaders
 
 def get_dataloaders(batch_size=128, batch_size_labeled=None, batch_size_unlabeled=None,
                     data_path='../data/gisette_scale', frac_labeled=None, num_labeled=None, stratified_unlabeling=False,
-                    stratified_sampling=False, num_workers=4):
+                    stratified_sampling=False, num_workers=4, random_noise=0):
     """
     Create data loaders for Gisette.
 
@@ -37,7 +37,6 @@ def get_dataloaders(batch_size=128, batch_size_labeled=None, batch_size_unlabele
             * valid_loader: Dataloader for the validation set
             * train_valid_loader: Dataloader for the combined training and validation sets
             * test_loader: Dataloader for the test set
-
     """
     train_data, train_labels = load_svmlight_file(os.path.join(data_path, 'gisette_scale'))
     test_data, test_labels = load_svmlight_file(os.path.join(data_path, 'gisette_scale.t'))
@@ -45,7 +44,14 @@ def get_dataloaders(batch_size=128, batch_size_labeled=None, batch_size_unlabele
     train_labels = (train_labels.flatten() + 1)/2
     test_labels = (test_labels.flatten() + 1)/2
 
-    train_dataset = create_data_loaders.PreloadedDataset(np.asarray(train_data.todense()), train_labels.astype(int))
+    def add_noise(x):
+        if random_noise > 0:
+            return x + np.random.normal(0, scale=random_noise, size=x.shape)
+        else:
+            return x
+
+    train_dataset = create_data_loaders.PreloadedDataset(np.asarray(train_data.todense()), train_labels.astype(int),
+                                                         transform=add_noise)
     test_dataset = create_data_loaders.PreloadedDataset(np.asarray(test_data.todense()), test_labels.astype(int))
 
     return create_data_loaders.generate_dataloaders(train_dataset,

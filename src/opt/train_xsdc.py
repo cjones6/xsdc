@@ -4,7 +4,6 @@ import torch
 import torch.optim as optim
 
 from . import train_classifier, ulr_utils, opt_utils, label_utils, deepcluster
-from . import deepcluster as clustering
 from src import default_params as defaults
 
 
@@ -37,7 +36,7 @@ class TrainSupervised:
             self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 500, gamma=0.25)
 
         if self.params.labeling_method == 'deep clustering':
-            self.deepcluster = clustering.__dict__['Kmeans'](self.params.deepcluster_k)
+            self.deepcluster = deepcluster.__dict__['Kmeans'](self.params.deepcluster_k)
             self.images = self.data.deepcluster_loader.dataset.dataset.images[self.data.deepcluster_loader.dataset.indices]
 
     def _get_step_size(self):
@@ -58,7 +57,7 @@ class TrainSupervised:
         all_features = opt_utils.compute_all_features(self.data.train_labeled_loader,
                                                       self.data.train_unlabeled_loader, None, None, self.model,
                                                       normalize=True, standardize=False,
-                                                      eps=1e-5)
+                                                      eps=1e-5, augment=self.params.augment)
         if len(all_features['train_labeled']['x']) > 0:
             all_features = torch.cat((all_features['train_labeled']['x'], all_features['train_unlabeled']['x']))
             batch_size = self.data.train_labeled_loader.batch_size
@@ -66,7 +65,7 @@ class TrainSupervised:
             all_features = all_features['train_unlabeled']['x']
             batch_size = self.data.train_unlabeled_loader.batch_size
         self.deepcluster.cluster(all_features.numpy(), verbose=False)
-        train_dataset = clustering.cluster_assign(self.deepcluster.images_lists, self.images)
+        train_dataset = deepcluster.cluster_assign(self.deepcluster.images_lists, self.images)
 
         sampler = deepcluster.UnifLabelSampler(int(self.params.deepcluster_update_clusters_every * batch_size),
                                                self.deepcluster.images_lists)
@@ -96,16 +95,22 @@ class TrainSupervised:
 
         # Get a batch of labeled and/or unlabeled data
         if not self.params.only_unsup and (not self.params.labeling_method == 'deep clustering' \
-                                           or self.iteration < self.params.labeling_burnin):
-            batch = opt_utils.get_batch(self.data, labeled=True, unlabeled=True)
+                                           and self.iteration >= self.params.labeling_burnin):
+            batch = opt_utils.get_batch(self.data, labeled=True, unlabeled=True, augment=self.params.augment)
             x_train_labeled, x_train_unlabeled, y_train_labeled, _, y_train_unlabeled_truth = batch
-        elif not self.params.labeling_method == 'deep clustering':
-            x_train_unlabeled, _, y_train_unlabeled_truth = opt_utils.get_batch(self.data, labeled=False,
-                                                                                unlabeled=True)
+        elif self.iteration < self.params.labeling_burnin and not self.params.only_sup:
+            x_train_labeled, y_train_labeled = opt_utils.get_batch(self.data, labeled=True, unlabeled=False,
+                                                                   augment=self.params.augment)
+            x_train_unlabeled, y_train_unlabeled_truth = None, None
+        elif self.params.only_unsup:
+            x_train_unlabeled, y_train_unlabeled, y_train_unlabeled_truth = opt_utils.get_batch(self.data,
+                                                                                                labeled=False,
+                                                                                                unlabeled=True,
+                                                                                                augment=self.params.augment)
             x_train_labeled, y_train_labeled = None, None
         else:
             x_train_labeled, y_train_labeled = opt_utils.get_batch(self.data, labeled=False, unlabeled=True,
-                                                                   deep_cluster=True)
+                                                                   deep_cluster=True, augment=self.params.augment)
             x_train_unlabeled, y_train_unlabeled_truth = None, None
 
         # Take a ULR-SGO step
@@ -130,12 +135,13 @@ class TrainSupervised:
             self.optimizer.step()
             self.lr_scheduler.step()
 
-    def _get_constraints(self, y_train_labeled, n):
+    def _get_constraints(self, y_train_labeled, n, augment):
         """
         Get constraints for the equivalence matrix based on the labeled data.
 
         :param y_train_labeled: Labels for the labeled subset of the batch
         :param n: Batch size (labeled + unlabeled observations)
+        :param augment: Number of augmented copies of each input example to use. If 0 then no augmentation is performed
         :return: mask: Binary matrix with value 0 in entry (i,j) if it is known whether i and j belong to the same class
                        and 1 else
         :return: known: Binary matrix with value 1 in entry (i,j) if it is known that i and j belong to the same class
@@ -155,6 +161,15 @@ class TrainSupervised:
             known = torch.zeros(n, n).to(defaults.device)
             torch.diagonal(known).fill_(1)
             torch.diagonal(mask).fill_(0)
+        if augment > 0:
+            if y_train_labeled is not None:
+                nu = n-nl
+            else:
+                nu = n
+                nl = 0
+            for i in range(int(nu//augment)):
+                known[nl+i*augment:nl+(i+1)*augment, nl+i*augment:nl+(i+1)*augment] = 1
+                mask[nl+i*augment:nl+(i+1)*augment, nl+i*augment:nl+(i+1)*augment] = 0
 
         return mask, known
 
@@ -173,7 +188,6 @@ class TrainSupervised:
         :return: known: Binary matrix with value 1 in entry (i,j) if it is known that i and j belong to the same class
                         and 0 else
         """
-        print('Adding constraints')
         if self.params.add_constraints_method == 'random':
             n = len(mask)
             nl = len(y_train_labeled)
@@ -252,18 +266,34 @@ class TrainSupervised:
         if self.iteration >= self.params.labeling_burnin and not self.params.labeling_method == 'deep clustering':
             with torch.autograd.no_grad():
                 n = len(features)
-                mask, known = self._get_constraints(y_train_labeled, n)
+                mask, known = self._get_constraints(y_train_labeled, n, self.params.augment)
                 if self.params.add_constraints:
                     mask, known = self._add_constraints(mask, known, y_train_labeled, y_train_unlabeled_truth)
 
             if self.params.labeling_method == 'matrix balancing':
                 with torch.autograd.no_grad():
-                    M = label_utils.optimize_labels(features, self.params.nclasses, self.params.lam, mask=mask,
-                                            known_values=known, nmin=self.params.min_frac_points_class*n,
-                                            nmax=self.params.max_frac_points_class*n).type(torch.get_default_dtype())
-                obj = ulr_utils.ulr_square_loss_m(features.to(defaults.device), M.to(defaults.device), self.params.lam,
-                                                  self.params.lambda_pix)
-            else:
+                    if self.iteration >= self.params.labeling_burnin:
+                        k = self.params.deepcluster_k
+                    else:
+                        k = self.params.nclasses
+                    M, eigenvalues = label_utils.optimize_labels(features, k, self.params.lam, mask=mask,
+                                                                 known_values=known,
+                                                                 nmin=self.params.min_frac_points_class*n,
+                                                                 nmax=self.params.max_frac_points_class*n,
+                                                                 eigenvalues=False)
+                    M = M.type(torch.get_default_dtype())
+                    self.results.update(self.iteration, **{'eigenvalues': eigenvalues})
+                obj = ulr_utils.ulr_square_loss_m(features.to(defaults.device), M.to(defaults.device), self.params.lam)
+            elif self.params.labeling_method == 'eigendecomposition':
+                with torch.autograd.no_grad():
+                    M, eigenvalues = label_utils.diffrac_relaxation_estimate_M(features, self.params.nclasses,
+                                                                               self.params.lam, mask, known,
+                                                                               nmin=self.params.min_frac_points_class*n,
+                                                                               use_cpu=False,
+                                                                               rounding=self.params.rounding)
+                self.results.update(self.iteration, **{'eigenvalues': eigenvalues.cpu().numpy()})
+                obj = ulr_utils.ulr_square_loss_m(features.to(defaults.device), M.to(defaults.device), self.params.lam)
+            elif self.params.labeling_method == 'pseudo labeling':
                 with torch.autograd.no_grad():
                     if y_train_labeled is not None:
                         y_labeled_one_hot = opt_utils.one_hot_embedding(y_train_labeled, self.params.nclasses)
@@ -277,20 +307,19 @@ class TrainSupervised:
                     else:
                         y = opt_utils.one_hot_embedding(y_pseudo, self.params.nclasses)
                     M = y.mm(y.t())
-                obj = ulr_utils.ulr_square_loss_m(features.to(defaults.device), M.to(defaults.device), self.params.lam,
-                                                  self.params.lambda_pix)
+                obj = ulr_utils.ulr_square_loss_m(features.to(defaults.device), M.to(defaults.device), self.params.lam)
+            else:
+                raise NotImplementedError
 
         elif self.iteration >= self.params.labeling_burnin and self.params.labeling_method == 'deep clustering':
             y_one_hot = opt_utils.one_hot_embedding(y_train_labeled, self.params.deepcluster_k)
             M = y_one_hot.mm(y_one_hot.t()).to(defaults.device)
             obj = ulr_utils.ulr_square_loss_m(features.to(defaults.device), M.to(defaults.device),
-                                              self.params.lam,
-                                              self.params.lambda_pix)
+                                              self.params.lam)
 
         else:
             y_one_hot = opt_utils.one_hot_embedding(y_train_labeled, self.params.nclasses)
-            obj, w_last, b_last = ulr_utils.ulr_square_loss_y(features, y_one_hot, self.params.lam,
-                                                              self.params.lambda_pix)
+            obj, w_last, b_last = ulr_utils.ulr_square_loss_y(features, y_one_hot, self.params.lam)
             self.w_last = w_last.detach()
             self.b_last = b_last.detach()
 
@@ -315,7 +344,8 @@ class TrainSupervised:
                                                           self.data.test_loader,
                                                           self.model,
                                                           normalize=self.params.normalize,
-                                                          standardize=self.params.standardize)
+                                                          standardize=self.params.standardize,
+                                                          augment=self.params.augment)
             y_labeled_one_hot = opt_utils.one_hot_embedding(all_features['train_labeled']['y'],
                                                             self.params.nclasses).to(defaults.device)
             y_unlabeled = opt_utils.nearest_neighbor(all_features['train_labeled']['x'],
@@ -329,8 +359,7 @@ class TrainSupervised:
                 with torch.autograd.no_grad():
                     _, w_last, b_last = ulr_utils.ulr_square_loss_y(x_train,
                                                                     torch.cat((y_labeled_one_hot, y_unlabeled_one_hot)),
-                                                                    self.params.lam,
-                                                                    self.params.lambda_pix)
+                                                                    self.params.lam)
             else:
                 y_train = torch.argmax(torch.cat((y_labeled_one_hot, y_unlabeled_one_hot)), 1)
                 test_acc, valid_acc, train_acc, test_loss, train_loss, w, best_lambda = train_classifier.train(
@@ -348,13 +377,13 @@ class TrainSupervised:
                                                           self.data.test_loader,
                                                           self.model,
                                                           normalize=self.params.normalize,
-                                                          standardize=self.params.standardize)
+                                                          standardize=self.params.standardize,
+                                                          augment=self.params.augment)
             if self.iteration != 0 and not update_lam:
                 y_labeled_one_hot = opt_utils.one_hot_embedding(all_features['train_labeled']['y'],
                                                                 self.params.nclasses)
                 _, w_last, b_last = ulr_utils.ulr_square_loss_y(all_features['train_labeled']['x'].to(defaults.device),
-                                                                          y_labeled_one_hot, self.params.lam,
-                                                                          self.params.lambda_pix, penalize=False)
+                                                                          y_labeled_one_hot, self.params.lam)
             else:
                 test_acc, valid_acc, train_acc, test_loss, train_loss, w, best_lambda = train_classifier.train(
                     (all_features['train_labeled']['x'], all_features['train_labeled']['y']),
@@ -373,7 +402,8 @@ class TrainSupervised:
                                                           self.data.test_loader,
                                                           self.model,
                                                           normalize=self.params.normalize,
-                                                          standardize=self.params.standardize)
+                                                          standardize=self.params.standardize,
+                                                          augment=self.params.augment)
             with torch.autograd.no_grad():
                 n = len(all_features['test']['x'])
                 mask = (torch.BoolTensor(n, n).zero_() + 1).to(defaults.device)
@@ -382,9 +412,10 @@ class TrainSupervised:
                 torch.diagonal(mask).fill_(0)
 
                 x_test = all_features['test']['x'].to(defaults.device)
-                M = label_utils.optimize_labels(x_test, self.params.nclasses, self.params.lam, mask=mask,
-                                                known_values=known, nmin=self.params.min_frac_points_class*n,
-                                                nmax=self.params.max_frac_points_class*n).type(torch.get_default_dtype())
+                M, eigengap = label_utils.optimize_labels(x_test, self.params.nclasses, self.params.lam, mask=mask,
+                                                          known_values=known, nmin=self.params.min_frac_points_class*n,
+                                                          nmax=self.params.max_frac_points_class*n, eigenvalues=False)
+                M = M.type(torch.get_default_dtype())
                 y_test = all_features['test']['y'].to(defaults.device)
                 yhat_test = torch.LongTensor(label_utils.get_estimated_labels(M, y_test, self.params.nclasses))
                 if self.params.labeling_method == 'pseudo labeling':
@@ -428,8 +459,6 @@ class TrainSupervised:
             self.optimizer = optim.SGD(self.model.model.parameters(), lr=self.params.step_size_init_semisup,
                                            momentum=self.params.momentum, weight_decay=self.params.lambda_filters)
             self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 500, gamma=1)
-            print('NEW OPTIMIZER. Momentum:', self.params.momentum, 'Learning rate:',
-                  self.params.step_size_init_semisup)
 
         while self.iteration < self.params.maxiter_final:
             t1 = time.time()
@@ -463,15 +492,13 @@ class TrainSupervised:
                 self.optimizer = optim.SGD(self.model.model.parameters(), lr=self.params.step_size_init_semisup,
                                            momentum=self.params.momentum, weight_decay=self.params.lambda_filters)
                 self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 500, gamma=1)
-                print('NEW OPTIMIZER. Momentum:', self.params.momentum, 'Learning rate:',
-                      self.params.step_size_init_semisup)
 
         print('Done training. Saving final results.')
         self._optimize_classifier_evaluate(only_labeled=False, only_unlabeled=self.params.only_unsup)
+        self.results.save()
+        self.params.save()
         if self.params.convnet:
             self.model.save(iteration=self.iteration, w_last=self.w_last, b_last=self.b_last, step_size=self.step_size,
                             optimizer=self.optimizer)
         else:
             self.model.save(iteration=self.iteration, w_last=self.w_last, b_last=self.b_last, step_size=self.step_size)
-        self.results.save()
-        self.params.save()

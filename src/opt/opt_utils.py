@@ -4,9 +4,10 @@ import scipy.stats
 import torch
 
 from src import default_params as defaults
+from src.opt import augmentation
 
 
-def get_batch(data, labeled=False, unlabeled=True, deep_cluster=False):
+def get_batch(data, labeled=False, unlabeled=True, deep_cluster=False, augment=0):
     """
     Get a batch of training data from the labeled and/or unlabeled datasets.
 
@@ -14,6 +15,7 @@ def get_batch(data, labeled=False, unlabeled=True, deep_cluster=False):
     :param labeled: Whether to return labeled data
     :param unlabeled: Whether to return unlabeled data
     :param deep_cluster: Whether to use the data loader for deep clustering
+    :param augment: Number of augmented copies of each input example to use. If 0 then no augmentation is performed
     :return: Tuple containing a subset of the following:
 
         * x_labeled: Batch of observations from the labeled training dataset
@@ -28,6 +30,8 @@ def get_batch(data, labeled=False, unlabeled=True, deep_cluster=False):
         except:
             data.deepcluster_loader = iter(data.deepcluster_loader)
             x_labeled, y_labeled = next(data.deepcluster_loader)
+        if augment:
+            x_labeled, y_labeled, _ = augmentation.augment(x_labeled, y_labeled, factor=augment)
         return x_labeled, y_labeled
 
     if labeled:
@@ -38,6 +42,8 @@ def get_batch(data, labeled=False, unlabeled=True, deep_cluster=False):
             x_labeled, y_labeled, _ = next(data.train_labeled_iter)
         x_labeled = x_labeled.type(torch.get_default_dtype()).to(defaults.device)
         y_labeled = y_labeled.to(defaults.device)
+        if augment:
+            x_labeled, y_labeled, _ = augmentation.augment(x_labeled, y_labeled, factor=augment)
         if not unlabeled:
             return x_labeled, y_labeled
 
@@ -49,6 +55,9 @@ def get_batch(data, labeled=False, unlabeled=True, deep_cluster=False):
             x_unlabeled, y_unlabeled, y_unlabeled_truth = next(data.train_unlabeled_iter)
         x_unlabeled = x_unlabeled.type(torch.get_default_dtype()).to(defaults.device)
         y_unlabeled = y_unlabeled.to(defaults.device)
+        if augment:
+            x_unlabeled, y_unlabeled, y_unlabeled_truth = augmentation.augment(x_unlabeled, y_unlabeled,
+                                                                               y_unlabeled_truth, factor=augment)
         if not labeled:
             return x_unlabeled, y_unlabeled, y_unlabeled_truth
 
@@ -83,7 +92,7 @@ def compute_features(x, model, normalize=True, standardize=False, eps=1e-5):
 
 
 def compute_all_features(train_lab_loader, train_unlab_loader, valid_loader, test_loader, model, normalize=True,
-                         standardize=False, eps=1e-5):
+                         standardize=False, eps=1e-5, augment=0):
     """
     Generate features for all images in the training, validation, and test sets using the given model. Then normalize
     or standardize them if specified.
@@ -96,6 +105,7 @@ def compute_all_features(train_lab_loader, train_unlab_loader, valid_loader, tes
     :param normalize: Whether to normalize the data
     :param standardize: Whether to standardize the data
     :param eps: Value to clamp the standard deviation or norm of the features to (if applicable)
+    :param augment: Number of augmented copies of each input example to use. If 0 then no augmentation is performed.
     :return: all_features: Dictionary with the features and labels for each of the input datasets
     """
     with torch.autograd.set_grad_enabled(False):
@@ -106,7 +116,11 @@ def compute_all_features(train_lab_loader, train_unlab_loader, valid_loader, tes
             if data_loader is not None:
                 for i, (x, y, ytrue) in enumerate(data_loader):
                     x = x.type(torch.get_default_dtype()).to(defaults.device)
-                    features = model(x)
+                    if augment and dataset_name == 'train_labeled':
+                        x, y, _ = augmentation.augment(x, y, y_unlabeled_truth=None, factor=augment)
+                    if augment and dataset_name == 'train_unlabeled':
+                        x, y, _ = augmentation.augment(x, y, y_unlabeled_truth=None, factor=1)
+                    features = model(x.type(torch.get_default_dtype()).to(defaults.device))
                     features = features.contiguous().view(features.shape[0], -1).data.cpu()
                     all_features[dataset_name]['x'].append(features)
                     all_features[dataset_name]['y'].append(y)
