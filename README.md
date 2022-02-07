@@ -1,9 +1,9 @@
 XSDC
 ====================================
 
-This repository contains companion code for the following paper:
+This repository contains companion code for the following [paper](https://link.springer.com/article/10.1007/s11222-021-10067-x):
 
-C. Jones, V. Roulet and Z. Harchaoui. Discriminative Clustering with Representation Learning for any Ratio of Labeled to Unlabeled Data. *Statistics and Computing* (to appear), 2022.
+C. Jones, V. Roulet and Z. Harchaoui. Discriminative clustering with representation learning with any ratio of labeled to unlabeled data. *Statistics and Computing* **32**, 17 (2022).
 
 If you use this code please cite the paper using the bibtex reference below.
 
@@ -11,8 +11,12 @@ If you use this code please cite the paper using the bibtex reference below.
 @article{JRH2022,
   title={Discriminative Clustering with Representation Learning for any Ratio of Labeled to Unlabeled Data},
   author={Jones, Corinne and Roulet, Vincent and Harchaoui, Zaid},
-  journal={Statistics and Computing (to appear)},
-  year={2022}
+  journal  = "Statistics and Computing",
+  volume   =  32,
+  number   =  1,
+  pages    = "17",
+  month    =  jan,
+  year     =  2022
 }
 ```
 
