@@ -2,9 +2,9 @@ import os
 
 from pandas import DataFrame
 
-from baseline.get_data import get_preprocessed_data
-from baseline.semi_sup_kmeans import predict_with_semi_sup_kmeans
-from baseline.pipeline_utils import var_to_str, format_files, save, load
+from experiments.baselines.get_data import get_preprocessed_data
+from experiments.baselines.semi_sup_kmeans import predict_with_semi_sup_kmeans
+from experiments.baselines.pipeline_utils import var_to_str, format_files, save, load
 
 
 def exp_core(dataset, scaling=True, n_train=None, seed=0, n_labels=0,

@@ -1,9 +1,9 @@
 XSDC
 ====================================
 
-This repository contains companion code for the following [paper](https://link.springer.com/article/10.1007/s11222-021-10067-x):
+This repository contains companion code for the following paper:
 
-C. Jones, V. Roulet and Z. Harchaoui. Discriminative clustering with representation learning with any ratio of labeled to unlabeled data. *Statistics and Computing* **32**, 17 (2022).
+C. Jones, V. Roulet and Z. Harchaoui. Discriminative Clustering with Representation Learning for any Ratio of Labeled to Unlabeled Data. *Statistics and Computing* (to appear), 2022.
 
 If you use this code please cite the paper using the bibtex reference below.
 
@@ -11,12 +11,8 @@ If you use this code please cite the paper using the bibtex reference below.
 @article{JRH2022,
   title={Discriminative Clustering with Representation Learning for any Ratio of Labeled to Unlabeled Data},
   author={Jones, Corinne and Roulet, Vincent and Harchaoui, Zaid},
-  journal  = "Statistics and Computing",
-  volume   =  32,
-  number   =  1,
-  pages    = "17",
-  month    =  jan,
-  year     =  2022
+  journal={Statistics and Computing (to appear)},
+  year={2022}
 }
 ```
 
@@ -95,6 +91,8 @@ The shell scripts to reproduce the main experiments are in the subfolders under 
 Baseline experiments
 --------------------
 In the folder experiments/baseline, you will find the baseline experiments that compare the method XSDC against semi-supervised k-means with seeding for different choices of kernels. This part of the code is independent of the rest. Make sure that you uploaded the datasets Gisette and Magic in the folder datasets as `baseline/datasets/gisette_scale/gisette_scale`, `baseline/datasets/gisette_scale/gisette_scale.t`, `baseline/datasets/magic/magic04.data`. The figures of the paper can be reproduced by running the script `exp_baseline.py`. The code is based on an implementation of semi-supervised k-means with seeding of Basu et al. (2002) which can be found in the file `semi_sup_kmeans.py` and tested in `test_semi_sup_kmeans.py`.
+
+An example Jupyter notebook that describes how to set up and run these baselines experiments can be found at example/semi_sup_kmeans_example.ipynb.
 
 Basu, S., Banerjee, A., & Mooney, R. (2002). Semi-supervised clustering by seeding. In Proceedings of International Conference on Machine Learning.
 

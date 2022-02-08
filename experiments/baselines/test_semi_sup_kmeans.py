@@ -5,9 +5,9 @@ from matplotlib import pyplot as plt
 from pandas import DataFrame
 from sklearn.cluster import KMeans
 
-from baseline.kernels_utils import RBF
-from baseline.get_data import make_synth_data, compute_gram
-from baseline.semi_sup_kmeans import semi_sup_kmeans, predict, align_pred_test_lab, compute_obj
+from experiments.baselines.kernels_utils import RBF
+from experiments.baselines.get_data import make_synth_data, compute_gram
+from experiments.baselines.semi_sup_kmeans import semi_sup_kmeans, predict, align_pred_test_lab, compute_obj
 
 
 def visualize_semi_sup_kmeans(k=3, n_lab_per_grp=10, n_unlab_per_grp=20, n_test_per_grp=20,

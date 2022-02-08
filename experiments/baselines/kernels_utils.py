@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-from baseline.pipeline_utils import device
 
 class RBF(nn.Module):
     """
@@ -43,8 +42,8 @@ def squared_l2_norm(x, y):
     norm_x = torch.sum(x ** 2, 1).unsqueeze(0)
     norm_y = torch.sum(y ** 2, 1).unsqueeze(0)
 
-    ones_x = torch.ones(nx, 1).to(device)
-    ones_y = torch.ones(ny, 1).to(device)
+    ones_x = torch.ones(nx, 1)
+    ones_y = torch.ones(ny, 1)
 
     a = torch.mm(ones_y, norm_x)
     b = torch.mm(x, y.t())
@@ -67,4 +66,4 @@ def one_hot_embedding(y, n_dims):
     y_one_hot = torch.zeros(y_tensor.size()[0], n_dims).scatter_(1, y_tensor, 1)
     y_one_hot = y_one_hot.view(y.shape[0], -1)
 
-    return y_one_hot.type(torch.get_default_dtype()).to(device)
+    return y_one_hot.type(torch.get_default_dtype())

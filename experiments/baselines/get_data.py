@@ -6,10 +6,10 @@ import torch
 import torchvision.transforms as transforms
 import torchvision
 from torch.utils.data import Dataset, DataLoader, RandomSampler, random_split
-from baseline.datasets.datasets import Gisette, Magic
-from baseline.pipeline_utils import save, load, format_files, var_to_str
+from experiments.baselines.datasets.datasets import Gisette, Magic
+from experiments.baselines.pipeline_utils import save, load, format_files, var_to_str
 import scipy.sparse.linalg as splinalg
-from baseline.kernels_utils import RBF
+from experiments.baselines.kernels_utils import RBF
 
 datasets = dict(mnist=torchvision.datasets.MNIST, cifar=torchvision.datasets.CIFAR10,
                 gisette=Gisette, magic=Magic)
@@ -20,8 +20,7 @@ std_pix = dict(mnist=(0.3081,), cifar=(0.247, 0.243, 0.261))
 
 
 # todo: add center, standardized for all datasets, augmented data for CIFAR
-def get_data(dataset, valid=False, data_aug=0,
-             centering=True, scaling=False, vectorize=True):
+def get_data(dataset, valid=False, centering=True, scaling=False, vectorize=True):
     dataset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets', dataset)
 
     data_transforms = []
@@ -179,13 +178,18 @@ def get_mean_scale(dataset):
         scaler = sklearn.preprocessing.StandardScaler()
         scaler.fit(X)
         mean, scale = torch.from_numpy(scaler.mean_), torch.from_numpy(scaler.scale_)
+        mean, scale = mean.type(x.dtype), scale.type(x.dtype)
+
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         save([mean, scale], open(file_path, 'wb'))
     return mean, scale
 
 
 def get_hyper_params_ref(dataset, scaling=True):
-    subsample = 5
+    if size_datasets[dataset] > 10000:
+        subsample = int(size_datasets[dataset]/10000)
+    else:
+        subsample = 1
     dataset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets', dataset)
     data_cfg = dict(scaling=scaling)
     file_path = os.path.join(dataset_path, var_to_str(data_cfg) + '_hyper_params_ref') + format_files
@@ -219,7 +223,8 @@ def get_hyper_params_ref(dataset, scaling=True):
 
 
 def get_reg_ref_rbf(dataset, scaling, nb_train, sigma):
-    subsample = 5
+    if size_datasets[dataset] > 10000:
+        subsample = int(size_datasets[dataset]/10000)
     dataset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets', dataset)
     data_cfg = dict(scaling=scaling, nb_train=nb_train, sigma=sigma)
     file_path = os.path.join(dataset_path, var_to_str(data_cfg) + '_reg_rbf_ref') + format_files
@@ -368,31 +373,24 @@ class Scale():
 
 
 def make_synth_data(dist_clust, n, k, d, radius):
-    # X_lab = torch.randn(n_lab, d)
     X = torch.cat([dist_clust * i + radius*torch.randn(int(n / k), d) for i in range(k)])
-    # y_lab = one_hot_embedding(torch.multinomial(torch.ones(k), n_lab, replacement=True), k)
     y = torch.zeros(n, dtype=torch.long)
     for i in range(k):
         y[i * int(n / k):(i + 1) * int(n / k)] = i
     return X, y
 
 
-def preprocess_dataset(dataset, kernel, reg_fac, sigma_fac, scaling=True):
+def preprocess_dataset(dataset, reg_fac, sigma_fac, scaling=True):
     hyper_params_ref = get_hyper_params_ref(dataset, scaling)
     scaling = True
     for dataset in ['gisette', 'magic', 'mnist', 'cifar']:
         n_train = 10000 if dataset in ['mnist', 'cifar'] else None
-        # get_mean_scale(dataset)
         for kernel in ['linear', 'rbf', 'svd']:
             reg = sigma = None
             if kernel == 'svd':
                 reg = hyper_params_ref['reg_ref'] * reg_fac
             elif kernel == 'rbf':
                 sigma = hyper_params_ref['sigma_ref'] * sigma_fac
-            # elif kernel == 'rbfsvd':
-            #     sigma = hyper_params_ref['sigma_ref'] * sigma_fac
-            #     reg_ref = get_reg_ref_rbf(dataset, scaling, n_train, sigma)
-            #     reg = reg_ref * reg_fac
             print(f'dataset: {dataset}\nkernel: {kernel}\nsigma: {sigma}\nreg:{reg}')
             preprocess_gram(dataset, scaling, n_train, kernel, reg, sigma)
 

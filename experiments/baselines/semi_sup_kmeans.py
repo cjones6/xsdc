@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 import scipy
 
-from baseline.kernels_utils import one_hot_embedding
+from experiments.baselines.kernels_utils import one_hot_embedding
 
 
 def predict_with_semi_sup_kmeans(data, max_iter=100):

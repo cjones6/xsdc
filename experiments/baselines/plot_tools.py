@@ -8,21 +8,30 @@ import pickle
 import seaborn as sns
 
 nice_writing = dict(gisette='Gisette', magic='MAGIC', mnist='MNIST', cifar='CIFAR-10',
-                    linear='Linear', rbf='Gaussian', svd='Covariance', xsdc='XSDC')
+                    linear='k-means-ssl-lin', rbf='k-means-ssl-rbf', svd='k-means-ssl-corr', xsdc='XSDC',
+                    kernel='Kernel')
 
 
-def plot_exp(results):
-    # dashes, palette =
+def plot_exp(results, max_n_labels=None, add_xsdc_results=False):
     set_plt_params()
     datasets = results['dataset'].unique().tolist()
-    fig, axs = plt.subplots(1, len(datasets), squeeze=False, figsize=(40, 10))
+    fig, axs = plt.subplots(1, len(datasets), squeeze=False, figsize=(20*len(datasets), 10))
+
+    if add_xsdc_results:
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', 'xsdc_results.pickle')
+        with open(file_path, 'rb') as file:
+            xsdc_results = pickle.load(file)
+        results = results.append(xsdc_results, ignore_index=True)
+    if max_n_labels is not None:
+        results = results[results['n_labels'] <= max_n_labels]
 
     for i, dataset in enumerate(datasets):
         sub_results = results[results['dataset'] == dataset]
         sns.lineplot(x='n_labels', y='test_acc', hue='kernel', style='kernel',
                      data=sub_results, ax=axs[0, i],
                      dashes=True, markers=True)
-        axs[0, i].set_xlabel(r'\# labeled observations')
+
+        axs[0, i].set_xlabel('# labeled observations')
         axs[0, i].set_title(nice_writing[dataset])
         axs[0, i].set_ylim(0, 1)
     handles, labels = axs[-1, -1].get_legend_handles_labels()
@@ -39,28 +48,30 @@ def plot_exp(results):
     fig.legend(handles=handles, labels=labels,
                loc='upper center',
                ncol=len(labels),
-               bbox_to_anchor=(0.5, 1.)
+               bbox_to_anchor=(0.5, 1.2)
                )
     fig.tight_layout()
 
     plt.show()
-    baseline_path = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(baseline_path, 'plots/baseline.pdf')
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    fig.savefig(file_path, format='pdf', bbox_inches='tight')
+    # baseline_path = os.path.dirname(os.path.abspath(__file__))
+    # file_path = os.path.join(baseline_path, 'plots/baseline.pdf')
+    # os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    # fig.savefig(file_path, format='pdf', bbox_inches='tight')
 
 
 def nice_plots(results):
     datasets = ['gisette', 'magic', 'mnist', 'cifar']
     dataset_titles = ['Gisette', 'MAGIC', 'MNIST', 'CIFAR-10']
-    methods = ['linear', 'svd', 'rbf', 'xsdc']
+    methods = ['linear', 'svd', 'rbf'
+        , 'xsdc'
+               ]
     params = {'axes.labelsize': 44,
               'font.size': 44,
               'legend.fontsize': 44,
               'xtick.labelsize': 28,
               'ytick.labelsize': 28,
               'font.family': 'Times New Roman',
-              'text.usetex': True,
+              # 'text.usetex': True,
               'lines.markersize': 8,
               'lines.linewidth': 3
               }
@@ -108,22 +119,22 @@ def nice_plots(results):
                 
         l1 = ax1[dataset_num].errorbar(summary_results['linear']['n_labels'], summary_results['linear']['mean'],
                                        yerr=summary_results['linear']['std'],
-                                       label=r'$k$-means\textsubscript{l}',
+                                       label='k-means\textsubscript{l}',
                                        marker=markers[0], mfc='white', c=red_colors[0], zorder=1,
                                        capsize=8)
         l3 = ax1[dataset_num].errorbar(summary_results['svd']['n_labels'], summary_results['svd']['mean'],
                                        yerr=summary_results['svd']['std'],
-                                       label=r'$k$-means\textsubscript{m}',
+                                       label='k-means\textsubscript{m}',
                                        marker=markers[2], mfc='white', c=red_colors[2],
                                        zorder=3, capsize=8)
         l2 = ax1[dataset_num].errorbar(summary_results['rbf']['n_labels'], summary_results['rbf']['mean'],
                                        yerr=summary_results['rbf']['std'],
-                                       label=r'$k$-means\textsubscript{r}',
+                                       label='k-means\textsubscript{r}',
                                        marker=markers[1], mfc='white', c=red_colors[1],
                                        zorder=2, capsize=8)
         l4 = ax1[dataset_num].errorbar(summary_results['xsdc']['n_labels'], summary_results['xsdc']['mean'],
                                        yerr=summary_results['xsdc']['std'],
-                                       label=r'xsdc',
+                                       label='xsdc',
                                        marker=markers[3], mfc='white', c=colors[0],
                                        zorder=4, capsize=8)
 
@@ -141,7 +152,7 @@ def nice_plots(results):
         ax1[dataset_num].set_title(dataset_titles[dataset_num], fontsize=44)
 
     fig1.legend(handles=[l1, l3, l2, l4],
-                labels=[r'$k$-means-ssl-lin', r'$k$-means-ssl-corr', r'$k$-means-ssl-rbf', 'XSDC'],
+                labels=['k-means-ssl-lin', 'k-means-ssl-corr', 'k-means-ssl-rbf', 'XSDC'],
                 loc='lower center',
                 bbox_to_anchor=(0.5, -0.2), fancybox=False, shadow=False, ncol=4, frameon=False)
     fig1.subplots_adjust(left=0.2, bottom=0.3, wspace=0.15, hspace=0.15)
@@ -156,11 +167,11 @@ def nice_plots(results):
 def set_plt_params():
     params = {'axes.labelsize': 60,
               'font.size': 50,
-              'legend.fontsize': 60,
+              'legend.fontsize': 50,
               'xtick.labelsize': 60,
               'ytick.labelsize': 60,
               'lines.linewidth': 5,
-              'text.usetex': True,
+              #'text.usetex': True,
               'lines.markersize': 30,
               # 'figure.figsize': (8, 6)
               }
